@@ -3,42 +3,42 @@ fun! Test_parse() abort
 			\ [
 				\ 'just root',
 				\ ['root = true'],
-				\ {'': {'root': 'true'}},
+				\ [[]],
 			\ ],
 			\ [
 				\ 'empty section',
 				\ ['root = true', '[*.vim]'],
-				\ {'': {'root': 'true'}, '*.vim': {}},
+				\ [['*.vim', {}]],
 			\ ],
 			\ [
 				\ '= value',
 				\ ['[*.vim]', 'setting = xx'],
-				\ {'': {}, '*.vim': {'setting': 'xx'}},
+				\ [['*.vim', {'setting': 'xx'}]],
 			\ ],
 			\ [
 				\ ': value',
 				\ ['[*.vim]', 'setting : xx'],
-				\ {'': {}, '*.vim': {'setting': 'xx'}},
+				\ [['*.vim', {'setting': 'xx'}]],
 			\ ],
 			\ [
 				\ 'line comment',
 				\ ['#foo', '[*.vim]', 'setting : xx', '# foo'],
-				\ {'': {}, '*.vim': {'setting': 'xx'}},
+				\ [['*.vim', {'setting': 'xx'}]],
 			\ ],
 			\ [
 				\ 'inline ; comment',
 				\ ['[*.vim] ; comment', 'setting : xx ; comment'],
-				\ {'': {}, '*.vim': {'setting': 'xx'}},
+				\ [['*.vim', {'setting': 'xx'}]],
 			\ ],
 			\ [
 				\ 'overwrite',
 				\ ['[*.vim]', 'setting = xx', 'setting = later'],
-				\ {'': {}, '*.vim': {'setting': 'later'}},
+				\ [['*.vim', {'setting': 'later'}]],
 			\ ],
 			\ [
 				\ 'case insensitive',
 				\ ['[*.vim]', 'setting = xx', 'SETTING: LATER   '],
-				\ {'': {}, '*.vim': {'setting': 'later'}},
+				\ [['*.vim', {'setting': 'later'}]],
 			\ ],
 	\ ]
 
@@ -47,10 +47,11 @@ fun! Test_parse() abort
 		call setline(1, l:test)
 		silent wq! .editorconfig
 
-		e test
-		if b:edc_conf != l:want
+		new
+		let l:conf = edc#load_files()
+		if l:conf != l:want
 			call Errorf("%s failed\nout:  %s\nwant: %s",
-						\ l:name, b:edc_conf, l:want)
+						\ l:name, l:conf, l:want)
 		endif
 	endfor
 endfun

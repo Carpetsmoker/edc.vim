@@ -1,62 +1,145 @@
 " Settings:
-"   g:edc_echo    Echo diagnositc informatin (default: 0).
 "   g:edc_silent  Don't show parse errors (default: 0).
 "
 " Variables:
-"   b:edc_conf    Parsed file(s).
-"   b:edc_errors  List of errors (if any, may be unset).
+"   b:edc_rules   Rules to apply
+"   b:edc_root    Root .editorconfig
+"   b:edc_save    Values before setting values form editorconfig
+"   b:edc_errors  List of errors (if any, may be unset)
 scriptencoding utf-8
 
 let s:save_cpo = &cpo
 set cpo&vim
 
-" TODO: make settings available in simple b: dict {"rule": "val", ...}
 fun! edc#init() abort
-	let l:conf = s:load_files()
-	let l:conf = filter(l:conf, {k, v -> l:k isnot '' && edc#match(l:k)})
-	let b:edc_conf = l:conf
-	if get(g:, 'edc_echo', 0)
-		echom printf('edc.vim: config: %s', l:conf)
+	let l:conf = filter(edc#load_files(), {i, v -> l:v[0] isnot '' && edc#match(l:v[0])})
+
+	let b:edc_rules = {}
+	for l:v in l:conf
+		call extend(b:edc_rules, l:v[1])
+	endfor
+
+	" Convert/validate values.
+	for l:k in keys(b:edc_rules)
+		if get(s:conv, l:k, 0) is 0 || b:edc_rules[l:k] is# 'unset'
+			continue
+		endif
+
+		try
+			let b:edc_rules[l:k] = s:conv[l:k](b:edc_rules[l:k])
+		catch
+			unlet b:edc_rules[l:k]
+			call s:err('%s: %s', l:k, v:exception)
+		endtry
+	endfor
+
+	" Set!
+	let b:edc_save = {}
+	for [l:rule, l:val] in items(b:edc_rules)
+		call s:apply(l:rule, l:val)
+	endfor
+endfun
+
+let s:conv = {
+	\ 'indent_style':             {v -> s:val_list(l:v, ['tab', 'space'])},
+	\ 'indent_size':              {v -> s:val_int(l:v is# 'tab' ? 0 : l:v)},
+	\ 'tab_width':                {v -> s:val_int(l:v)},
+	\ 'end_of_line':              {v -> s:val_list(l:v, ['lf', 'cr', 'crlf'])},
+	\ 'insert_final_newline':     {v -> s:val_bool(l:v)},
+	\ 'trim_trailing_whitespace': {v -> s:val_bool(l:v)},
+	\ 'max_line_length':          {v -> s:val_int(l:v is# 'off' ? 0 : l:v)},
+	\ }
+
+fun! s:val_list(v, list) abort
+	if index(a:list, a:v) > -1
+		return a:v
+	endif
+	throw printf('not an allowed value: %s', a:v)
+endfun
+
+fun! s:val_bool(v) abort
+	if a:v is? 'true' || a:v is# '1'
+		return 1
+	elseif a:v is? 'false' || a:v is# '0'
+		return 0
+	endif
+	throw printf('not a bool: %s', a:v)
+endfun
+
+fun! s:val_int(v) abort
+	if match(a:v, '^\d\+$')
+		throw printf('not an int: %s', a:v)
+	endif
+	return str2nr(a:v)
+endfun
+
+" Note: setting name is passed to :execute
+fun! s:save(setting, val)
+	if a:val is# 'unset'
+		if get(b:edc_save, a:setting, v:none) isnot v:none
+			exe printf('let &l:%s = b:edc_save[%s]', a:setting, a:setting) 
+		endif
+		return 1
 	endif
 
-	for l:rules in values(l:conf)
-		for [l:rule, l:val] in items(l:rules)
-			call s:apply(l:rule, l:val)
-		endfor
-	endfor
+	if get(b:edc_save, a:setting, v:none) isnot v:none
+		exe printf('let b:edc_save[%s] = &l:%s', a:setting, a:setting) 
+	endif
+	return 0
 endfun
 
 " https://github.com/editorconfig/editorconfig/wiki/EditorConfig-Properties
 "
-" TODO: boolify some values
-" TODO: more useful error reporting.
-" TODO: support some domain-specific properties
+" TODO: add block_comment, line_comment, block_comment_start, block_comment_end
 fun! s:apply(rule, val) abort
-	if get(g:, 'edc_echo', 0)
-		echom printf('edc.vim: apply %s -> %s', a:rule, a:val)
-	endif
-
 	if a:rule is# 'indent_style'
+		if s:save('expandtab', a:val)
+			return
+		endif
 		let &l:expandtab = {'tab': 0, 'space': 1}[a:val]
 
+	elseif a:rule is# 'end_of_line'
+		if s:save('fileformat', a:val)
+			return
+		endif
+		let &l:fileformat = {'lf': 'unix', 'cr': 'mac', 'crlf': 'dos'}[a:val]
+
 	elseif a:rule is# 'indent_size'
-		let &l:shiftwidth = a:val is# 'tab' ? 0 : a:val
+		if s:save('shiftwidth', a:val)
+			return
+		endif
+		let &l:shiftwidth = a:val
 
 	elseif a:rule is# 'tab_width'
+		if s:save('tabstop', a:val)
+			return
+		endif
 		let &l:tabstop = a:val
 
-	elseif a:rule is# 'end_of_line'
-		let &l:fileformat = {'lf': 'unix' 'cr': 'mac' 'crlf': 'dos'}[a:val]
+	elseif a:rule is# 'max_line_length'
+		if s:save('textwidth', a:val)
+			return
+		endif
+		let &l:textwidth = a:val
 
 	elseif a:rule is# 'charset'
+		if s:save('fileencoding', a:val)
+			return
+		endif
+
 		" TODO: set 'bomb'? Maybe parse value smarter?
 		let &l:fileencoding = a:val
 
 	elseif a:rule is# 'insert_final_newline'
+		if s:save('endofline', a:val)
+			" TODO: restore fixendofline
+			return
+		endif
 		let &l:endofline = a:val
 		let &l:fixendofline = 0
 
 	elseif a:rule is# 'trim_trailing_whitespace'
+		" TODO: unset
 		fun! s:trim_trailing() abort
 			let l:save = winsaveview()
 			keeppatterns %s/\s\+$//e
@@ -64,21 +147,40 @@ fun! s:apply(rule, val) abort
 		endfun
 		autocmd plugin-edc BufWritePre <buffer> call s:trim_trailing()
 
-	elseif a:rule is# 'max_line_length'
-		let &l:textwidth = a:val is# 'off' ? 0 : a:val
-
 	else
+		" TODO: collect unknown rules in one error message, and add option to
+		" disable.
 		call s:err('unknown rule: %s', a:rule)
 	endif
 endfun
 
 " Load all .editorconfig files until there's one with root = true.
-fun! s:load_files() abort
-	let l:ret = {}
+fun! edc#load_files() abort
+	let l:ret = []
 
+	" [
+	"    ["*":           {indent_style: 'tab'}],
+	"    ["*.{txt,csv}": {indent_style: 'space'}],
+	" ]
 	for l:path in findfile('.editorconfig', '.;', -1)
-		call extend(l:ret, s:parse(l:path), 'keep')
-		if get(l:ret[''], 'root', 0)
+		let [l:conf, l:root] = s:parse(l:path)
+
+		for l:v in l:conf
+			let l:found = 0
+			for l:ex in l:ret
+				if l:ex[0] is# l:v[0]
+					call extend(l:ex[1], l:v[1])
+					let l:found = 1
+				endif
+			endfor
+
+			if l:found is# 0
+				call add(l:ret, l:v)
+			endif
+		endfor
+
+		if l:root
+			let b:edc_root = fnamemodify(l:path, ':p:h')
 			break
 		endif
 	endfor
@@ -86,30 +188,20 @@ fun! s:load_files() abort
 	return l:ret
 endfun
 
-" Parse a single .editorconfig file.
+" Parse a single .editorconfig file, sections are returned in the order they're
+" found:
 "
-" TODO: this loses the ordering of the matches, but spec says:
-"    files are read top to bottom and the most recent rules found take precedence.
-"    Properties from matching EditorConfig sections are applied in the order they
-"    were read, so properties in closer files take precedence.
-"
-" {
-"    "*": {
-"     "root": 1,
-"    },
-"    "*.vim": {
-"		
-"    },
-"    "*.{txt,csv}": {
-"    },
-" }
+" [
+"    ["*":           {indent_style: 'tab'}],
+"    ["*.{txt,csv}": {indent_style: 'space'}],
+" ]
 "
 " https://editorconfig.org/#file-format-details
 " https://docs.python.org/2/library/configparser.html
 fun! s:parse(path) abort
-	let l:key = ''
-	let l:ret = {'': {}}
-	let l:section = ''
+	let l:ret = []
+	let l:section = []
+	let l:root = 0
 
 	let l:lines = readfile(a:path)
 	for l:i in range(len(l:lines))
@@ -127,16 +219,19 @@ fun! s:parse(path) abort
 			continue
 		end
 
-		" Section.
-		if l:line[0] is# '['
-			let l:section = trim(trim(l:line, '[]'))
-			let l:ret[l:section] = {}
+		" Start section.
+		if l:line[0] is# '[' && l:line[len(l:line) - 1] is# ']'
+			if l:section != []
+				call add(l:ret, l:section)
+			endif
+			let l:section = [trim(trim(l:line, '[]')), {}]
 			continue
 		endif
 
 		" Line continuation.
 		if match(l:line, '^\s') > -1
-			/let l:ret[l:section][l:key] .= trim(l:line)
+			" TODO
+			"let l:ret[l:section][l:key] .= trim(l:line)
 			continue
 		endif
 
@@ -154,14 +249,19 @@ fun! s:parse(path) abort
 		" Properties and values are case-insensitive.
 		let l:split = split(tolower(l:line), l:chr)
 
-		" TODO: For any property, a value of "unset" is to remove the effect of
-		" that property, even if it has been set before.
-
 		let l:key = trim(l:split[0])
-		let l:ret[l:section][l:key] = trim(join(l:split[1:], l:chr))
+
+		" Special case for top-level root.
+		if l:key is# 'root' && l:section ==# []
+			let l:root = 1
+			continue
+		endif
+
+		let l:section[1][l:key] = trim(join(l:split[1:], l:chr))
 	endfor
 
-	return l:ret
+	call add(l:ret, l:section)
+	return [l:ret, l:root]
 endfun
 
 " Automatically supported:
@@ -204,10 +304,9 @@ fun! edc#match(pat) abort
 
 	let b:last_pat = l:pat
 
-	" TODO: vim-editorconfig prepends with \<; not sure why? Probably not for
-	" the craic?
-	" TODO: adding the $ anchor intuitively makes sense, but is not specified as
-	" far as I can see.
+	" Note: $ anchor is not spec'd, but most (all?) implementations do it, and
+	" intuitively makes sense.
+	" https://github.com/editorconfig/editorconfig-core-c/blob/master/src/lib/ec_glob.c#L325
 	return match(expand('%:p'), l:pat . '$') > -1
 endfun
 
