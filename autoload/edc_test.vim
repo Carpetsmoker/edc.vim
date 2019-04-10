@@ -21,6 +21,11 @@ fun! Test_parse() abort
 				\ [['*.vim', {'setting': 'xx'}]],
 			\ ],
 			\ [
+				\ 'line continuation',
+				\ ['[*.vim]', 'setting = xx', ' YY', 'another: foo'],
+				\ [['*.vim', {'setting': 'xx yy', 'another': 'foo'}]],
+			\ ],
+			\ [
 				\ 'line comment',
 				\ ['#foo', '[*.vim]', 'setting : xx', '# foo'],
 				\ [['*.vim', {'setting': 'xx'}]],

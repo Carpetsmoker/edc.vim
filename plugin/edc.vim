@@ -10,6 +10,9 @@ endif
 let s:save_cpo = &cpo
 set cpo&vim
 
+" TODO
+"command! EDCInfo call edc#info()
+
 augroup plugin-edc
 	au!
 	au BufNewFile,BufReadPost * nested call edc#init()
