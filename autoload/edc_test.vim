@@ -54,3 +54,43 @@ fun! Test_parse() abort
 		endif
 	endfor
 endfun
+
+fun! Test_match() abort
+	let l:tests = [
+			"\ *
+			\ ['a.vim', '*', 1],
+			\ ['a.vim', '*.vim', 1],
+			\ ['foo/a.vim', 'bar/*.vim', 0],
+			\ ['foo/a.vim', 'foo/*.vim', 1],
+			\ ['foo/bar/a.vim', 'foo/*.vim', 0],
+			\ ['a.vim', 'a*.vim', 1],
+			"\ **
+			\ ['a.vim', '**', 1],
+			\ ['a.vim', '**.vim', 1],
+			\ ['foo/a.vim', 'bar/**.vim', 0],
+			\ ['foo/a.vim', 'foo/**.vim', 1],
+			\ ['foo/bar/a.vim', 'foo/**.vim', 1],
+			"\ ?
+			\ ['a.vim', '?.vim', 1],
+			\ ['a.vim', '??vim', 1],
+			"\ [name]
+			\ ['a.vim', '[abc].vim', 1],
+			\ ['a.vim', '[def].vim', 0],
+			"\ {s1,s2}
+			\ ['a.vim', '{a,b}.vim', 1],
+			\ ['a.vim', 'a.{vim,js}', 1],
+			\ ['a.vim', '{c,d}.vim', 0],
+			"\ Escape
+			\ ['a.vim', 'a\*.vim', 0],
+			\ ['foo/bar/a.vim', 'foo/\*\*.vim', 0],
+		\]
+
+	for [l:fname, l:pat, l:want] in l:tests
+		exe ':e ' . l:fname
+		let l:got = edc#match(l:pat)
+		if l:got isnot l:want
+			call Errorf("|%s| -> |%s| -> |%s|\nout:  %s\nwant: %s",
+						\ l:pat, l:fname, b:last_pat, l:got, l:want)
+		endif
+	endfor
+endfun

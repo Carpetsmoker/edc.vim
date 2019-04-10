@@ -1,5 +1,5 @@
 " Settings:
-"   g:edc_echo    Echo the parsed files (default: 0).
+"   g:edc_echo    Echo diagnositc informatin (default: 0).
 "   g:edc_silent  Don't show parse errors (default: 0).
 "
 " Variables:
@@ -10,13 +10,65 @@ scriptencoding utf-8
 let s:save_cpo = &cpo
 set cpo&vim
 
+" TODO: make settings available in simple b: dict {"rule": "val", ...}
 fun! edc#init() abort
 	let l:conf = s:load_files()
-
+	let l:conf = filter(l:conf, {k, v -> l:k isnot '' && edc#match(l:k)})
 	let b:edc_conf = l:conf
-
 	if get(g:, 'edc_echo', 0)
-		echom printf('%s', l:conf)
+		echom printf('edc.vim: config: %s', l:conf)
+	endif
+
+	for l:rules in values(l:conf)
+		for [l:rule, l:val] in items(l:rules)
+			call s:apply(l:rule, l:val)
+		endfor
+	endfor
+endfun
+
+" https://github.com/editorconfig/editorconfig/wiki/EditorConfig-Properties
+"
+" TODO: boolify some values
+" TODO: more useful error reporting.
+" TODO: support some domain-specific properties
+fun! s:apply(rule, val) abort
+	if get(g:, 'edc_echo', 0)
+		echom printf('edc.vim: apply %s -> %s', a:rule, a:val)
+	endif
+
+	if a:rule is# 'indent_style'
+		let &l:expandtab = {'tab': 0, 'space': 1}[a:val]
+
+	elseif a:rule is# 'indent_size'
+		let &l:shiftwidth = a:val is# 'tab' ? 0 : a:val
+
+	elseif a:rule is# 'tab_width'
+		let &l:tabstop = a:val
+
+	elseif a:rule is# 'end_of_line'
+		let &l:fileformat = {'lf': 'unix' 'cr': 'mac' 'crlf': 'dos'}[a:val]
+
+	elseif a:rule is# 'charset'
+		" TODO: set 'bomb'? Maybe parse value smarter?
+		let &l:fileencoding = a:val
+
+	elseif a:rule is# 'insert_final_newline'
+		let &l:endofline = a:val
+		let &l:fixendofline = 0
+
+	elseif a:rule is# 'trim_trailing_whitespace'
+		fun! s:trim_trailing() abort
+			let l:save = winsaveview()
+			keeppatterns %s/\s\+$//e
+			call winrestview(l:save)
+		endfun
+		autocmd plugin-edc BufWritePre <buffer> call s:trim_trailing()
+
+	elseif a:rule is# 'max_line_length'
+		let &l:textwidth = a:val is# 'off' ? 0 : a:val
+
+	else
+		call s:err('unknown rule: %s', a:rule)
 	endif
 endfun
 
@@ -35,6 +87,11 @@ fun! s:load_files() abort
 endfun
 
 " Parse a single .editorconfig file.
+"
+" TODO: this loses the ordering of the matches, but spec says:
+"    files are read top to bottom and the most recent rules found take precedence.
+"    Properties from matching EditorConfig sections are applied in the order they
+"    were read, so properties in closer files take precedence.
 "
 " {
 "    "*": {
@@ -107,19 +164,51 @@ fun! s:parse(path) abort
 	return l:ret
 endfun
 
-
-" *	            Matches any string of characters, except path separators (/)
-" **	        Matches any string of characters
-" ?	            Matches any single character
-" [name]	    Matches any single character in name
-" [!name]	    Matches any single character not in name
-" {s1,s2,s3}	Matches any of the strings given (separated by commas)
-" {num1..num2}	Matches any integer numbers between num1 and num2, where num1
-"               and num2 can be either positive or negative
+" Automatically supported:
+" [name]        Matches any single character in name.
+"
+" TODO:
+" {num1..num2}  Matches any integer numbers between num1 and num2, where num1
+"               and num2 can be either positive or negative.
 " 
-" Special characters can be escaped with a backslash so they won't be
-" interpreted as wildcard patterns.
-fun! s:match(pat) abort
+" Note: glob2regpat() is close, but treats * and ** the same, and doesn't
+" support {num1..num2}.
+let s:glob_to_reg = [
+		"\ [!name] Matches any single character not in name.
+		\ ['\[!',       '[^'],
+		"\ {s1,s2,s3} Matches any of the strings given (separated by commas).
+		\ ['{[^}]*}',   '\="\\%(" . substitute(submatch(0)[1:-2], ",", "\\\\|", "g") . "\\)"'],
+		"\ ** Matches any string of characters.
+		\ ['\*\*',      '.\\{}'],
+		"\ * Matches any string of characters, except path separators (/).
+		\ ['\*',        '[^/]\\{}'],
+		"\ ? Matches any single character.
+		\ ['?',         '.'],
+\ ]
+
+" Report if the current filename matches the given pattern.
+fun! edc#match(pat) abort
+	" Quick match.
+	if a:pat is# '*' || a:pat is# '**'
+		return 1
+	endif
+
+	" TODO: escape other regexp chars?
+	let l:pat = escape(a:pat, '.')
+
+	for [l:f, l:r] in s:glob_to_reg
+		" Special characters can be escaped with a backslash so they won't be
+		" interpreted as wildcard patterns.
+		let l:pat = substitute(l:pat, '\\\@<!' . l:f, l:r, 'g')
+	endfor
+
+	let b:last_pat = l:pat
+
+	" TODO: vim-editorconfig prepends with \<; not sure why? Probably not for
+	" the craic?
+	" TODO: adding the $ anchor intuitively makes sense, but is not specified as
+	" far as I can see.
+	return match(expand('%:p'), l:pat . '$') > -1
 endfun
 
 fun! s:err(msg, ...) abort
@@ -127,8 +216,8 @@ fun! s:err(msg, ...) abort
 		let b:edc_errors = []
 	endif
 
-	let l:err = printf(a:msg, a:000)
-	call append(b:edc_errors, l:err)
+	let l:err = call('printf', [a:msg] + a:000)
+	call add(b:edc_errors, l:err)
 
 	if get(g:, 'edc_silent', 0)
 		return
