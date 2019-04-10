@@ -1,0 +1,53 @@
+*pi_edc.txt*  For Vim version 8.1.  Last change: 2019 April 10
+
+Author:  Martin Tournoij <martin@arp242.net>
+         https://github.com/Carpetsmoker/edc.vim
+
+EditorConfig support in Vim                               *edc* *editorconfig*
+
+EditorConfig is a standard to help maintain a consistent coding style for a
+team of developers working across different editors and IDEs.
+
+For more information about the EditorConfig standard, see:
+https://editorconfig.org
+
+{Vi does not have any of this}
+
+==============================================================================
+1. Settings                                                     *edc-settings*
+
+Settings:
+
+	*g:edc_silent*	Don't show parse errors (default: 0).
+	*g:edc_ignore*	Ignore unknown settings (default: 1).
+
+TODO?
+
+	let g:editorconfig_blacklist = {
+		\ 'filetype': ['git.*', 'fugitive'],
+		\ 'pattern': ['\.un~$']}
+
+
+==============================================================================
+2. Variables                                                   *edc-variables*
+
+Variables set by this plugin:
+
+	*b:edc_rules*	Dict with all parsed rules, including unknown ones.
+	*b:edc_root*	Directory of root .editorconfig (root = true).
+	*b:edc_save*	Saved settings before setting from editorconfig
+	*b:edc_errors*	List of errors (if any, may be unset)
+
+==============================================================================
+3. Tips                                                             *edc-tips*
+
+The root directory, if any, is stored in s:edc_root
+>
+	au BufNewFile,BufReadPost
+		\  if exists('b:edc_root')
+		\|     exe 'lcd ' . fnameescape(b:edc_root)
+		\| endif
+
+
+==============================================================================
+ vim:tw=78:ts=8:noet:ft=help:norl:

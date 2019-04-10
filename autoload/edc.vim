@@ -1,11 +1,3 @@
-" Settings:
-"   g:edc_silent  Don't show parse errors (default: 0).
-"
-" Variables:
-"   b:edc_rules   Rules to apply
-"   b:edc_root    Root .editorconfig
-"   b:edc_save    Values before setting values form editorconfig
-"   b:edc_errors  List of errors (if any, may be unset)
 scriptencoding utf-8
 
 let s:save_cpo = &cpo
