@@ -3,3 +3,5 @@ distribution.
 
 Use [testing.vim](https://github.com/Carpetsmoker/testing.vim) to run the tests:
 `tvim test ./...`.
+
+This is work-in-progress; also see: https://github.com/vim/vim/issues/2286
