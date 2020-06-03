@@ -117,7 +117,7 @@ fun! s:parse(path) abort
 		endif
 
 		" Skip blank lines and comments.
-		if l:line is# '' || l:line[0] is# '#'
+		if l:line is# '' || l:line[0] is# '#' || l:line[0] is# ';'
 			continue
 		end
 
